@@ -1,33 +1,57 @@
+import { Colors } from '@/constants/colors';
 import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Text } from 'react-native';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        headerStyle:           { backgroundColor: Colors.navy },
+        headerTitleStyle:      { color: Colors.cream, fontWeight: '700', fontSize: 18 },
+        tabBarStyle:           { backgroundColor: Colors.navy, borderTopColor: Colors.red, borderTopWidth: 2 },
+        tabBarActiveTintColor:   Colors.red,
+        tabBarInactiveTintColor: Colors.steel,
+        tabBarLabelStyle:      { fontSize: 11, fontWeight: '600' },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Freekend',
+          tabBarLabel: 'Home',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text>,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="movies"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Movies',
+          tabBarLabel: 'Movies',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🎬</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="eat"
+        options={{
+          title: 'Restaurants',
+          tabBarLabel: 'Eat',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🍽</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="events"
+        options={{
+          title: 'Events',
+          tabBarLabel: 'Events',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🎭</Text>,
+        }}
+      />
+      <Tabs.Screen
+        name="framebot"
+        options={{
+          title: 'FrameBot',
+          tabBarLabel: 'FrameBot',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🤖</Text>,
         }}
       />
     </Tabs>
