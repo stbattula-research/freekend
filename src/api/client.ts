@@ -68,6 +68,12 @@ export interface PlanItem {
   startsAt: string;
 }
 
+export interface Suggestion {
+  type: PlanItem['type'];
+  title: string;
+  details: string;
+}
+
 export interface ChatUser {
   name?: string;
   ott_subscriptions?: string[];
@@ -85,6 +91,8 @@ export interface FrameBotChatParams {
   city?: string;
   language?: string;
   sessionId?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface FrameBotChatResult {
@@ -131,27 +139,33 @@ export function getEvents(city: string, category?: string): Promise<EventsRespon
 }
 
 /**
- * POST /framebot/chat — streams SSE `data:` lines carrying {text} and {plan},
- * ending with {done:true, sessionId}. Calls onChunk with each text chunk and
- * onPlan with the latest plan items as they arrive. Resolves with full text
- * and the session id.
+ * POST /framebot/chat — streams SSE `data:` lines carrying {text}, {suggestions}
+ * pick cards and {plan}, ending with {done:true, sessionId}. Calls onChunk with
+ * each text chunk, onSuggestions with fresh suggestion cards, and onPlan with
+ * the latest plan items as they arrive. Resolves with full text and session id.
  */
 export async function framebotChat(
   params: FrameBotChatParams,
   onChunk: (text: string) => void,
-  onPlan?: (items: PlanItem[]) => void
+  onPlan?: (items: PlanItem[]) => void,
+  onSuggestions?: (suggestions: Suggestion[]) => void
 ): Promise<FrameBotChatResult> {
+  const body: Record<string, unknown> = {
+    message: params.message,
+    history: params.history ?? [],
+    user: params.user ?? {},
+    city: params.city ?? 'hyderabad',
+    language: params.language ?? 'English',
+    sessionId: params.sessionId,
+  };
+  if (params.lat != null && params.lng != null) {
+    body.lat = params.lat;
+    body.lng = params.lng;
+  }
   const res = await fetch(`${BASE_URL}/framebot/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: params.message,
-      history: params.history ?? [],
-      user: params.user ?? {},
-      city: params.city ?? 'hyderabad',
-      language: params.language ?? 'English',
-      sessionId: params.sessionId,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`FrameBot API error ${res.status}`);
   if (!res.body) throw new Error('Streaming not supported in this environment');
@@ -177,12 +191,14 @@ export async function framebotChat(
         const json = JSON.parse(payload) as {
           text?: string;
           plan?: { items: PlanItem[] };
+          suggestions?: Suggestion[];
           done?: boolean;
           sessionId?: string;
           error?: string;
         };
         if (json.error) throw new Error(json.error);
         if (json.plan && onPlan) onPlan(json.plan.items);
+        if (json.suggestions && onSuggestions) onSuggestions(json.suggestions);
         if (json.done) {
           if (json.sessionId) sessionId = json.sessionId;
           try { await reader.cancel(); } catch { /* noop */ }

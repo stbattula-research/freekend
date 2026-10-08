@@ -6,12 +6,14 @@ import {
   removePlanItem,
   type ChatMessage,
   type PlanItem,
+  type Suggestion,
 } from '@/src/api/client';
 import {
   cancelAllReminders,
   requestPermission,
   schedulePlanReminders,
 } from '@/src/notifications';
+import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,6 +33,7 @@ interface DisplayMessage {
   role: 'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  suggestions?: Suggestion[];
 }
 
 const QUICK_REPLIES = ['Plan my Saturday night', 'Date night ideas', 'Family day out'];
@@ -71,8 +74,12 @@ export default function FrameBotScreen() {
   const [remindMe, setRemindMe] = useState(false);
   const [remindedIds, setRemindedIds] = useState<string[]>([]);
   const [webHint, setWebHint] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const listRef = useRef<FlatList<DisplayMessage>>(null);
   const remindMeRef = useRef(false);
+  const assistantIdRef = useRef<string | null>(null);
+  const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  coordsRef.current = coords;
 
   const scrollToEnd = () => {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
@@ -84,6 +91,33 @@ export default function FrameBotScreen() {
       .then((r) => setPlan(r.items))
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Geolocation: ask once for foreground permission; when granted, every chat
+  // call carries lat/lng so suggestions sort near-first with distances.
+  // Denied/unavailable → silent fallback to the city text input.
+  useEffect(() => {
+    (async () => {
+      try {
+        if (Platform.OS === 'web') {
+          // DEMO-ONLY hook for the web build: ?lat=..&lng=.. injects a demo
+          // location (e.g. ?lat=17.3850&lng=78.4867). Not used on native.
+          const q = new URLSearchParams(window.location.search);
+          const la = parseFloat(q.get('lat') || '');
+          const ln = parseFloat(q.get('lng') || '');
+          if (Number.isFinite(la) && Number.isFinite(ln)) {
+            setCoords({ lat: la, lng: ln });
+          }
+          return;
+        }
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({});
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {
+        // location unavailable — city input remains the fallback
+      }
+    })();
   }, []);
 
   /** (Re)schedule reminders for the current plan when reminders are on. */
@@ -162,12 +196,19 @@ export default function FrameBotScreen() {
       .map((m) => ({ role: m.role, content: m.content }));
 
     const assistantId = nextId();
-    setMessages((prev) => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '', streaming: true }]);
+    assistantIdRef.current = assistantId;
+    // Fresh turn: drop stale suggestion cards; new ones arrive via onSuggestions.
+    setMessages((prev) => [
+      ...prev.map((m) => (m.suggestions ? { ...m, suggestions: undefined } : m)),
+      userMsg,
+      { id: assistantId, role: 'assistant', content: '', streaming: true },
+    ]);
     setInput('');
     setSending(true);
     scrollToEnd();
 
     try {
+      const c = coordsRef.current;
       await framebotChat(
         {
           message,
@@ -176,13 +217,22 @@ export default function FrameBotScreen() {
           city: city.trim() || 'hyderabad',
           language: language.trim() || 'English',
           sessionId,
+          ...(c ? { lat: c.lat, lng: c.lng } : {}),
         },
         (chunk) => {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + chunk } : m))
           );
         },
-        (items) => applyPlan(items)
+        (items) => applyPlan(items),
+        (suggestions) => {
+          const id = assistantIdRef.current;
+          if (!id) return;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === id ? { ...m, suggestions } : m))
+          );
+          scrollToEnd();
+        }
       );
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
     } catch (e: any) {
@@ -210,6 +260,24 @@ export default function FrameBotScreen() {
             {item.streaming && item.content === '' ? '…' : ''}
           </Text>
           {item.streaming && item.content !== '' && <Text style={styles.typing}>▍</Text>}
+          {!isUser && item.suggestions && item.suggestions.length > 0 && (
+            <View style={styles.cardsWrap}>
+              {item.suggestions.map((s) => (
+                <Pressable
+                  key={`${s.type}-${s.title}`}
+                  testID={`suggestion-card-${s.title}`}
+                  style={styles.card}
+                  onPress={() => send(`Add ${s.title}`)}
+                  disabled={sending}
+                >
+                  <Text style={styles.cardTitle}>
+                    {TYPE_EMOJI[s.type]} {s.title}
+                  </Text>
+                  {s.details ? <Text style={styles.cardDetails}>{s.details}</Text> : null}
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       </View>
     );
@@ -236,6 +304,7 @@ export default function FrameBotScreen() {
           value={language}
           onChangeText={setLanguage}
         />
+        {coords && <Text style={styles.nearYou}>📍 Near you</Text>}
       </View>
 
       <FlatList
@@ -344,6 +413,25 @@ const styles = StyleSheet.create({
   userText: { color: Colors.white },
   botText: { color: Colors.cream },
   typing: { color: Colors.red, fontSize: 15 },
+  cardsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  card: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.red,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    maxWidth: '100%',
+  },
+  cardTitle: { color: Colors.cream, fontSize: 14, fontWeight: '700' },
+  cardDetails: { color: Colors.steel, fontSize: 12, marginTop: 3 },
+  nearYou: {
+    color: Colors.success,
+    fontSize: 12,
+    fontWeight: '700',
+    alignSelf: 'center',
+    paddingHorizontal: 4,
+  },
   daySection: {
     marginHorizontal: 12, marginBottom: 8, backgroundColor: Colors.card,
     borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.navy,
