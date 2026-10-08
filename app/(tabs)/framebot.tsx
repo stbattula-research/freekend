@@ -1,6 +1,18 @@
 import { Colors } from '@/constants/colors';
-import { framebotChat, type ChatMessage } from '@/src/api/client';
-import { useRef, useState } from 'react';
+import {
+  clearPlan,
+  framebotChat,
+  getPlan,
+  removePlanItem,
+  type ChatMessage,
+  type PlanItem,
+} from '@/src/api/client';
+import {
+  cancelAllReminders,
+  requestPermission,
+  schedulePlanReminders,
+} from '@/src/notifications';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,6 +20,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -22,8 +35,24 @@ interface DisplayMessage {
 
 const QUICK_REPLIES = ['Plan my Saturday night', 'Date night ideas', 'Family day out'];
 
+const TYPE_EMOJI: Record<PlanItem['type'], string> = {
+  movie: '🎬',
+  restaurant: '🍽',
+  event: '🎭',
+  activity: '✈️',
+};
+
 let msgId = 0;
 const nextId = () => `m${++msgId}`;
+
+function newSessionId(): string {
+  const c = (globalThis as any).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = Math.floor(Math.random() * 16);
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 export default function FrameBotScreen() {
   const [messages, setMessages] = useState<DisplayMessage[]>([
@@ -37,10 +66,89 @@ export default function FrameBotScreen() {
   const [city, setCity] = useState('hyderabad');
   const [language, setLanguage] = useState('English');
   const [sending, setSending] = useState(false);
+  const [sessionId] = useState(newSessionId);
+  const [plan, setPlan] = useState<PlanItem[]>([]);
+  const [remindMe, setRemindMe] = useState(false);
+  const [remindedIds, setRemindedIds] = useState<string[]>([]);
+  const [webHint, setWebHint] = useState<string | null>(null);
   const listRef = useRef<FlatList<DisplayMessage>>(null);
+  const remindMeRef = useRef(false);
 
   const scrollToEnd = () => {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
+  };
+
+  // Load any existing plan for this session on mount
+  useEffect(() => {
+    getPlan(sessionId)
+      .then((r) => setPlan(r.items))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** (Re)schedule reminders for the current plan when reminders are on. */
+  const refreshReminders = async (items: PlanItem[]) => {
+    if (!remindMeRef.current) return;
+    if (Platform.OS === 'web') {
+      // Web can't schedule — badge the items that would notify on mobile.
+      setRemindedIds(
+        items.filter((i) => new Date(i.startsAt).getTime() > Date.now()).map((i) => i.id)
+      );
+      return;
+    }
+    const ids = await schedulePlanReminders(items);
+    setRemindedIds(ids);
+  };
+
+  const applyPlan = (items: PlanItem[]) => {
+    setPlan(items);
+    void refreshReminders(items);
+  };
+
+  const toggleRemindMe = async () => {
+    if (remindMeRef.current) {
+      remindMeRef.current = false;
+      setRemindMe(false);
+      setRemindedIds([]);
+      setWebHint(null);
+      await cancelAllReminders();
+      return;
+    }
+    if (Platform.OS === 'web') {
+      // Web has no local-notification scheduling; the prompt doubles as
+      // approval on mobile. Show the hint and badge future items visually.
+      remindMeRef.current = true;
+      setRemindMe(true);
+      setWebHint('⏰ Reminders need the mobile app — enable them there to get notified.');
+      setRemindedIds(
+        plan.filter((i) => new Date(i.startsAt).getTime() > Date.now()).map((i) => i.id)
+      );
+      return;
+    }
+    const granted = await requestPermission();
+    if (!granted) return; // the permission prompt IS the approval
+    remindMeRef.current = true;
+    setRemindMe(true);
+    const ids = await schedulePlanReminders(plan);
+    setRemindedIds(ids);
+  };
+
+  const removeItem = async (itemId: string) => {
+    try {
+      const r = await removePlanItem(sessionId, itemId);
+      applyPlan(r.items);
+    } catch {
+      // keep local state on failure
+    }
+  };
+
+  const clearDay = async () => {
+    try {
+      const r = await clearPlan(sessionId);
+      applyPlan(r.items);
+    } catch {
+      // keep local state on failure
+    }
   };
 
   const send = async (text: string) => {
@@ -61,12 +169,20 @@ export default function FrameBotScreen() {
 
     try {
       await framebotChat(
-        { message, history, user: { name: 'Friend' }, city: city.trim() || 'hyderabad', language: language.trim() || 'English' },
+        {
+          message,
+          history,
+          user: { name: 'Friend' },
+          city: city.trim() || 'hyderabad',
+          language: language.trim() || 'English',
+          sessionId,
+        },
         (chunk) => {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + chunk } : m))
           );
-        }
+        },
+        (items) => applyPlan(items)
       );
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
     } catch (e: any) {
@@ -131,6 +247,52 @@ export default function FrameBotScreen() {
         onContentSizeChange={scrollToEnd}
       />
 
+      <View style={styles.daySection}>
+        <View style={styles.dayHeader}>
+          <Text style={styles.dayTitle}>📅 Your day</Text>
+          <View style={styles.dayHeaderRight}>
+            {plan.length > 0 && (
+              <Pressable onPress={clearDay}>
+                <Text style={styles.clearText}>Clear day</Text>
+              </Pressable>
+            )}
+            <View style={styles.remindRow}>
+              <Text style={styles.remindLabel}>Remind me</Text>
+              <Switch
+                value={remindMe}
+                onValueChange={toggleRemindMe}
+                trackColor={{ false: Colors.navy, true: Colors.red }}
+                thumbColor={Colors.cream}
+              />
+            </View>
+          </View>
+        </View>
+        {webHint && <Text style={styles.webHint}>{webHint}</Text>}
+        {plan.length === 0 ? (
+          <Text style={styles.dayEmpty}>
+            Nothing planned yet — agree to a suggestion and I&apos;ll build your day here.
+          </Text>
+        ) : (
+          plan.map((item) => (
+            <View key={item.id} style={styles.dayItem}>
+              <Text style={styles.dayEmoji}>{TYPE_EMOJI[item.type]}</Text>
+              <View style={styles.dayInfo}>
+                <Text style={styles.dayItemTitle}>
+                  {item.title}
+                  {remindedIds.includes(item.id) ? ' ⏰' : ''}
+                </Text>
+                <Text style={styles.dayItemDetails}>
+                  {item.time} · {item.details}
+                </Text>
+              </View>
+              <Pressable onPress={() => removeItem(item.id)} hitSlop={8}>
+                <Text style={styles.removeText}>×</Text>
+              </Pressable>
+            </View>
+          ))
+        )}
+      </View>
+
       <View style={styles.chipsRow}>
         {QUICK_REPLIES.map((q) => (
           <Pressable key={q} style={styles.chip} onPress={() => send(q)} disabled={sending}>
@@ -182,6 +344,24 @@ const styles = StyleSheet.create({
   userText: { color: Colors.white },
   botText: { color: Colors.cream },
   typing: { color: Colors.red, fontSize: 15 },
+  daySection: {
+    marginHorizontal: 12, marginBottom: 8, backgroundColor: Colors.card,
+    borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.navy,
+  },
+  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  dayTitle: { color: Colors.cream, fontSize: 15, fontWeight: '700' },
+  dayHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  clearText: { color: Colors.steel, fontSize: 12, textDecorationLine: 'underline' },
+  remindRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  remindLabel: { color: Colors.cream, fontSize: 13, fontWeight: '600' },
+  webHint: { color: Colors.warning, fontSize: 12, marginBottom: 8 },
+  dayEmpty: { color: Colors.steel, fontSize: 13, lineHeight: 18 },
+  dayItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.navy },
+  dayEmoji: { fontSize: 20 },
+  dayInfo: { flex: 1 },
+  dayItemTitle: { color: Colors.cream, fontSize: 14, fontWeight: '700' },
+  dayItemDetails: { color: Colors.steel, fontSize: 12, marginTop: 2 },
+  removeText: { color: Colors.steel, fontSize: 22, fontWeight: '700', paddingHorizontal: 4 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
   chip: { borderWidth: 1, borderColor: Colors.red, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
   chipText: { color: Colors.red, fontSize: 13, fontWeight: '600' },

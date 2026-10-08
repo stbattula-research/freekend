@@ -59,6 +59,15 @@ export interface EventsResponse {
   note?: string;
 }
 
+export interface PlanItem {
+  id: string;
+  type: 'movie' | 'restaurant' | 'event' | 'activity';
+  title: string;
+  details: string;
+  time: string;
+  startsAt: string;
+}
+
 export interface ChatUser {
   name?: string;
   ott_subscriptions?: string[];
@@ -75,6 +84,12 @@ export interface FrameBotChatParams {
   user?: ChatUser;
   city?: string;
   language?: string;
+  sessionId?: string;
+}
+
+export interface FrameBotChatResult {
+  text: string;
+  sessionId: string;
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -116,10 +131,16 @@ export function getEvents(city: string, category?: string): Promise<EventsRespon
 }
 
 /**
- * POST /framebot/chat — streams SSE `data:` lines carrying {text}, ending with {done:true}.
- * Calls onChunk with each text chunk as it arrives; resolves with the full text.
+ * POST /framebot/chat — streams SSE `data:` lines carrying {text} and {plan},
+ * ending with {done:true, sessionId}. Calls onChunk with each text chunk and
+ * onPlan with the latest plan items as they arrive. Resolves with full text
+ * and the session id.
  */
-export async function framebotChat(params: FrameBotChatParams, onChunk: (text: string) => void): Promise<string> {
+export async function framebotChat(
+  params: FrameBotChatParams,
+  onChunk: (text: string) => void,
+  onPlan?: (items: PlanItem[]) => void
+): Promise<FrameBotChatResult> {
   const res = await fetch(`${BASE_URL}/framebot/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -129,6 +150,7 @@ export async function framebotChat(params: FrameBotChatParams, onChunk: (text: s
       user: params.user ?? {},
       city: params.city ?? 'hyderabad',
       language: params.language ?? 'English',
+      sessionId: params.sessionId,
     }),
   });
   if (!res.ok) throw new Error(`FrameBot API error ${res.status}`);
@@ -138,6 +160,7 @@ export async function framebotChat(params: FrameBotChatParams, onChunk: (text: s
   const decoder = new TextDecoder();
   let buffer = '';
   let full = '';
+  let sessionId = params.sessionId ?? '';
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -151,11 +174,19 @@ export async function framebotChat(params: FrameBotChatParams, onChunk: (text: s
       if (!trimmed.startsWith('data:')) continue;
       const payload = trimmed.slice(5).trim();
       try {
-        const json = JSON.parse(payload) as { text?: string; done?: boolean; error?: string };
+        const json = JSON.parse(payload) as {
+          text?: string;
+          plan?: { items: PlanItem[] };
+          done?: boolean;
+          sessionId?: string;
+          error?: string;
+        };
         if (json.error) throw new Error(json.error);
+        if (json.plan && onPlan) onPlan(json.plan.items);
         if (json.done) {
+          if (json.sessionId) sessionId = json.sessionId;
           try { await reader.cancel(); } catch { /* noop */ }
-          return full;
+          return { text: full, sessionId };
         }
         if (json.text) {
           full += json.text;
@@ -166,7 +197,34 @@ export async function framebotChat(params: FrameBotChatParams, onChunk: (text: s
       }
     }
   }
-  return full;
+  return { text: full, sessionId };
+}
+
+export function getPlan(sessionId: string): Promise<{ sessionId: string; items: PlanItem[] }> {
+  return getJSON<{ sessionId: string; items: PlanItem[] }>(
+    `/framebot/plans/${encodeURIComponent(sessionId)}`
+  );
+}
+
+export function removePlanItem(
+  sessionId: string,
+  itemId: string
+): Promise<{ sessionId: string; items: PlanItem[] }> {
+  return fetch(`${BASE_URL}/framebot/plans/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}`, {
+    method: 'DELETE',
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(`Remove item failed (${res.status})`);
+    return (await res.json()) as { sessionId: string; items: PlanItem[] };
+  });
+}
+
+export function clearPlan(sessionId: string): Promise<{ sessionId: string; items: PlanItem[] }> {
+  return fetch(`${BASE_URL}/framebot/plans/${encodeURIComponent(sessionId)}/clear`, {
+    method: 'POST',
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(`Clear plan failed (${res.status})`);
+    return (await res.json()) as { sessionId: string; items: PlanItem[] };
+  });
 }
 
 export { BASE_URL };
