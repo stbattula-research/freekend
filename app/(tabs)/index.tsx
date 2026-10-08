@@ -1,83 +1,71 @@
-import { Colors } from '@/constants/colors';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ComponentProps } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Caption, GlassCard } from '@/components/glass';
+import { Colors } from '@/constants/colors';
 
-const CARDS = [
-  { emoji: '🤖', title: 'Ask FrameBot', desc: 'Chat your plan into existence', route: '/(tabs)/framebot' as const },
-  { emoji: '🎬', title: 'Movies', desc: 'Trending films & OTT picks', route: '/(tabs)/movies' as const },
-  { emoji: '🍽', title: 'Eat', desc: 'Restaurants near you', route: '/(tabs)/eat' as const },
-  { emoji: '🎭', title: 'Events', desc: 'What’s on in your city', route: '/(tabs)/events' as const },
+const CARDS: { icon: ComponentProps<typeof Ionicons>['name']; title: string; desc: string; route: '/(tabs)/framebot' | '/(tabs)/movies' | '/(tabs)/eat' | '/(tabs)/events' }[] = [
+  { icon: 'chatbubble-ellipses-outline', title: 'Ask FrameBot', desc: 'Tell me the vibe — I’ll plan your day', route: '/(tabs)/framebot' },
+  { icon: 'film-outline', title: 'Movies', desc: 'Trending films and OTT picks', route: '/(tabs)/movies' },
+  { icon: 'restaurant-outline', title: 'Eat', desc: 'Restaurants near you', route: '/(tabs)/eat' },
+  { icon: 'ticket-outline', title: 'Events', desc: 'What’s on in your city', route: '/(tabs)/events' },
 ];
 
 export default function HomeScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>FREE<Text style={styles.logoRed}>KEND</Text></Text>
-      <Text style={styles.tagline}>Your weekend. Your scene.</Text>
-      <Text style={styles.intro}>Chat with FrameBot or browse — movies, food, events and trips, all in one place.</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.wordmark}>Freekend</Text>
+      <Caption style={styles.subtitle}>
+        Your AI planner for movies, food, events and trips — all in one place.
+      </Caption>
 
       <View style={styles.cards}>
         {CARDS.map((c) => (
-          <Pressable key={c.title} style={styles.card} onPress={() => router.push(c.route)}>
-            <Text style={styles.cardEmoji}>{c.emoji}</Text>
-            <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>{c.title}</Text>
-              <Text style={styles.cardDesc}>{c.desc}</Text>
-            </View>
+          <Pressable key={c.title} onPress={() => router.push(c.route)}>
+            <GlassCard style={styles.card}>
+              <View style={styles.cardInner}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name={c.icon} size={22} color={Colors.accent} />
+                </View>
+                <View style={styles.cardText}>
+                  <Text style={styles.cardTitle}>{c.title}</Text>
+                  <Text style={styles.cardDesc}>{c.desc}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.tertiary} />
+              </View>
+            </GlassCard>
           </Pressable>
         ))}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bg,
-    alignItems: 'center',
-    paddingTop: 48,
-    paddingHorizontal: 20,
-  },
-  logo: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: Colors.cream,
+  container: { flex: 1, backgroundColor: Colors.bg },
+  content: { paddingTop: 72, paddingHorizontal: 20, paddingBottom: 110 },
+  wordmark: {
+    fontFamily: 'Georgia',
+    fontSize: 46,
+    fontWeight: '700',
     letterSpacing: -1,
+    color: Colors.ink,
   },
-  logoRed: {
-    color: Colors.red,
-  },
-  tagline: {
-    fontSize: 12,
-    letterSpacing: 4,
-    color: Colors.steel,
-    marginTop: 8,
-    textTransform: 'uppercase',
-  },
-  intro: {
-    fontSize: 14,
-    color: Colors.steel,
-    marginTop: 16,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  cards: {
-    width: '100%',
-    marginTop: 32,
-    gap: 12,
-  },
-  card: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 18,
-    flexDirection: 'row',
+  subtitle: { marginTop: 10, fontSize: 16, lineHeight: 22, maxWidth: 320 },
+  cards: { marginTop: 30, gap: 14 },
+  card: { padding: 16 },
+  cardInner: { flexDirection: 'row', alignItems: 'center' },
+  iconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Colors.accentSoft,
     alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.red,
+    justifyContent: 'center',
+    marginRight: 14,
   },
-  cardEmoji: { fontSize: 30, marginRight: 16 },
   cardText: { flex: 1 },
-  cardTitle: { color: Colors.cream, fontSize: 18, fontWeight: '700' },
-  cardDesc: { color: Colors.steel, fontSize: 13, marginTop: 2 },
+  cardTitle: { color: Colors.ink, fontSize: 17, fontWeight: '600', letterSpacing: -0.2 },
+  cardDesc: { color: Colors.secondary, fontSize: 13, marginTop: 3, lineHeight: 18 },
 });

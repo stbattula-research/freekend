@@ -1,6 +1,8 @@
 import { Colors } from '@/constants/colors';
+import { artTint, Caption, GlassCard, LargeTitle, PrimaryButton, SearchField } from '@/components/glass';
 import { getMovieDetails, getTrendingMovies, searchMovies, type Movie, type MoviesResponse } from '@/src/api/client';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,16 +12,23 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
+// Art-directed poster: deterministic pastel artwork with serif title —
+// intentional design, never a "missing image" box.
 function Poster({ movie, posterBase, size }: { movie: Movie; posterBase: string; size: 'grid' | 'detail' }) {
   const uri = movie.poster_path ? `${posterBase}${movie.poster_path}` : null;
+  const tint = artTint(movie.title);
   if (!uri) {
     return (
-      <View style={[styles.posterFallback, size === 'grid' ? styles.posterGrid : styles.posterDetail]}>
-        <Text style={styles.posterFallbackText}>{movie.title}</Text>
+      <View style={[styles.artFallback, size === 'grid' ? styles.posterGrid : styles.posterDetail, { backgroundColor: tint.bg }]}>
+        <Text style={[styles.watermark, { color: tint.fg }]} numberOfLines={1}>
+          {movie.title.charAt(0).toUpperCase()}
+        </Text>
+        <Text style={[styles.artTitle, size === 'detail' && styles.artTitleLarge, { color: tint.fg }]} numberOfLines={4}>
+          {movie.title}
+        </Text>
       </View>
     );
   }
@@ -75,56 +84,58 @@ export default function MoviesScreen() {
     }
   };
 
+  const yearOf = (m: Movie) => (m.release_date ? m.release_date.slice(0, 4) : '');
+
   const renderItem = ({ item }: { item: Movie }) => (
     <Pressable style={styles.tile} onPress={() => openDetails(item.id)}>
       <Poster movie={item} posterBase={data?.poster_base ?? ''} size="grid" />
-      <Text style={styles.tileTitle} numberOfLines={2}>{item.title}</Text>
-      <Text style={styles.tileMeta}>★ {item.vote_average.toFixed(1)}</Text>
+      <Text style={styles.tileTitle} numberOfLines={1}>{item.title}</Text>
+      <Text style={styles.tileMeta}>
+        ★ {item.vote_average.toFixed(1)}{yearOf(item) ? ` · ${yearOf(item)}` : ''}
+      </Text>
     </Pressable>
+  );
+
+  const header = (
+    <View style={styles.header}>
+      <LargeTitle>{mode === 'search' ? 'Results' : 'Movies'}</LargeTitle>
+      <SearchField
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search movies"
+        onSubmit={() => load(query.trim() || undefined)}
+        style={styles.search}
+      />
+      {mode === 'search' && (
+        <Pressable onPress={() => { setQuery(''); load(); }} hitSlop={8}>
+          <Text style={styles.clearText}>Clear — back to trending</Text>
+        </Pressable>
+      )}
+    </View>
   );
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchRow}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search movies…"
-          placeholderTextColor={Colors.steel}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={() => load(query.trim() || undefined)}
-          returnKeyType="search"
-        />
-        <Pressable style={styles.searchBtn} onPress={() => load(query.trim() || undefined)}>
-          <Text style={styles.searchBtnText}>Search</Text>
-        </Pressable>
-      </View>
-
-      {mode === 'search' && data && (
-        <Pressable onPress={() => { setQuery(''); load(); }}>
-          <Text style={styles.clearText}>✕ Clear — back to trending</Text>
-        </Pressable>
-      )}
-
       {loading && (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.red} />
-          <Text style={styles.statusText}>Loading movies…</Text>
+          {header}
+          <ActivityIndicator size="large" color={Colors.accent} style={styles.loader} />
+          <Caption>Loading movies…</Caption>
         </View>
       )}
 
       {!loading && error && (
         <View style={styles.center}>
-          <Text style={styles.errorText}>⚠️ {error}</Text>
-          <Pressable style={styles.retryBtn} onPress={() => load(query.trim() || undefined)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
+          {header}
+          <Caption style={styles.errorText}>{error}</Caption>
+          <PrimaryButton label="Retry" onPress={() => load(query.trim() || undefined)} style={styles.retry} />
         </View>
       )}
 
       {!loading && !error && data && data.results.length === 0 && (
         <View style={styles.center}>
-          <Text style={styles.statusText}>No movies found. Try another search.</Text>
+          {header}
+          <Caption>No movies found. Try another search.</Caption>
         </View>
       )}
 
@@ -132,8 +143,9 @@ export default function MoviesScreen() {
         <FlatList
           data={data.results}
           keyExtractor={(m) => String(m.id)}
-          numColumns={3}
+          numColumns={2}
           renderItem={renderItem}
+          ListHeaderComponent={header}
           contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.row}
         />
@@ -141,12 +153,12 @@ export default function MoviesScreen() {
 
       <Modal visible={selectedId !== null} animationType="slide" onRequestClose={() => setSelectedId(null)}>
         <View style={styles.modal}>
-          <Pressable style={styles.backBtn} onPress={() => setSelectedId(null)}>
-            <Text style={styles.backText}>← Back</Text>
+          <Pressable style={styles.closeBtn} onPress={() => setSelectedId(null)} hitSlop={10}>
+            <Ionicons name="close" size={20} color={Colors.ink} />
           </Pressable>
           {detailsLoading && (
             <View style={styles.center}>
-              <ActivityIndicator size="large" color={Colors.red} />
+              <ActivityIndicator size="large" color={Colors.accent} />
             </View>
           )}
           {!detailsLoading && details && (
@@ -154,14 +166,16 @@ export default function MoviesScreen() {
               <Poster movie={details} posterBase={details.poster_base} size="detail" />
               <Text style={styles.detailTitle}>{details.title}</Text>
               <Text style={styles.detailMeta}>
-                ★ {details.vote_average.toFixed(1)}  •  {details.release_date || '—'}
+                ★ {details.vote_average.toFixed(1)}{details.release_date ? `  ·  ${details.release_date}` : ''}
               </Text>
-              <Text style={styles.detailOverview}>{details.overview || 'No overview available.'}</Text>
+              <GlassCard style={styles.overviewCard}>
+                <Text style={styles.detailOverview}>{details.overview || 'No overview available.'}</Text>
+              </GlassCard>
             </ScrollView>
           )}
           {!detailsLoading && !details && (
             <View style={styles.center}>
-              <Text style={styles.errorText}>Could not load details.</Text>
+              <Caption>Could not load details.</Caption>
             </View>
           )}
         </View>
@@ -171,35 +185,53 @@ export default function MoviesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg, paddingTop: 12 },
-  searchRow: { flexDirection: 'row', paddingHorizontal: 12, marginBottom: 8, gap: 8 },
-  searchInput: {
-    flex: 1, backgroundColor: Colors.card, color: Colors.cream,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15,
-    borderWidth: 1, borderColor: Colors.navy,
+  container: { flex: 1, backgroundColor: Colors.bg },
+  header: { paddingTop: 64, paddingHorizontal: 20, paddingBottom: 6 },
+  search: { marginTop: 14 },
+  clearText: { color: Colors.accent, fontSize: 14, fontWeight: '600', marginTop: 10 },
+  center: { flex: 1, paddingHorizontal: 20 },
+  loader: { marginTop: 40, marginBottom: 12 },
+  errorText: { marginTop: 40, textAlign: 'center' },
+  retry: { marginTop: 16, alignSelf: 'center' },
+  grid: { paddingHorizontal: 14, paddingBottom: 110 },
+  row: { justifyContent: 'space-between' },
+  tile: { width: '48%', marginBottom: 22 },
+  posterGrid: { width: '100%', aspectRatio: 2 / 3, borderRadius: 16 },
+  artFallback: { alignItems: 'center', justifyContent: 'center', padding: 16 },
+  watermark: {
+    position: 'absolute',
+    fontFamily: 'Georgia',
+    fontSize: 150,
+    fontWeight: '700',
+    opacity: 0.13,
   },
-  searchBtn: { backgroundColor: Colors.red, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
-  searchBtnText: { color: Colors.white, fontWeight: '700' },
-  clearText: { color: Colors.steel, paddingHorizontal: 14, paddingBottom: 6, fontSize: 13 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  statusText: { color: Colors.steel, marginTop: 12, fontSize: 15 },
-  errorText: { color: Colors.warning, fontSize: 15, textAlign: 'center' },
-  retryBtn: { marginTop: 16, backgroundColor: Colors.red, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: Colors.white, fontWeight: '700' },
-  grid: { paddingHorizontal: 8, paddingBottom: 24 },
-  row: { justifyContent: 'flex-start' },
-  tile: { width: '33.333%', padding: 6 },
-  posterGrid: { width: '100%', aspectRatio: 2 / 3, borderRadius: 10, backgroundColor: Colors.card },
-  posterFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.navy, padding: 8 },
-  posterFallbackText: { color: Colors.cream, fontWeight: '700', fontSize: 13, textAlign: 'center' },
-  tileTitle: { color: Colors.cream, fontSize: 12, fontWeight: '600', marginTop: 6 },
-  tileMeta: { color: Colors.steel, fontSize: 11, marginTop: 2 },
-  modal: { flex: 1, backgroundColor: Colors.bg, paddingTop: 48 },
-  backBtn: { paddingHorizontal: 16, paddingVertical: 8 },
-  backText: { color: Colors.red, fontSize: 16, fontWeight: '700' },
-  detailBody: { padding: 20, alignItems: 'center' },
-  posterDetail: { width: 220, aspectRatio: 2 / 3, borderRadius: 14, backgroundColor: Colors.card },
-  detailTitle: { color: Colors.cream, fontSize: 24, fontWeight: '800', marginTop: 18, textAlign: 'center' },
-  detailMeta: { color: Colors.steel, fontSize: 14, marginTop: 8 },
-  detailOverview: { color: Colors.silver, fontSize: 15, lineHeight: 22, marginTop: 16, textAlign: 'center' },
+  artTitle: {
+    fontFamily: 'Georgia',
+    fontSize: 21,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  artTitleLarge: { fontSize: 30, lineHeight: 38 },
+  tileTitle: { color: Colors.ink, fontSize: 15, fontWeight: '600', marginTop: 8, letterSpacing: -0.2 },
+  tileMeta: { color: Colors.secondary, fontSize: 13, marginTop: 3 },
+  modal: { flex: 1, backgroundColor: Colors.bg },
+  closeBtn: {
+    position: 'absolute',
+    top: 56,
+    left: 16,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailBody: { paddingTop: 110, paddingHorizontal: 24, paddingBottom: 60, alignItems: 'center' },
+  posterDetail: { width: 210, aspectRatio: 2 / 3, borderRadius: 20 },
+  detailTitle: { color: Colors.ink, fontSize: 27, fontWeight: '800', letterSpacing: -0.5, marginTop: 20, textAlign: 'center' },
+  detailMeta: { color: Colors.secondary, fontSize: 15, marginTop: 8 },
+  overviewCard: { marginTop: 22, padding: 18, alignSelf: 'stretch' },
+  detailOverview: { color: Colors.ink, fontSize: 15, lineHeight: 23 },
 });

@@ -1,6 +1,8 @@
 import { Colors } from '@/constants/colors';
+import { Caption, GlassCard, LargeTitle, PrimaryButton, SearchField } from '@/components/glass';
 import { getEvents, type FreekendEvent } from '@/src/api/client';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
@@ -45,70 +46,80 @@ export default function EventsScreen() {
   };
 
   const renderItem = ({ item }: { item: FreekendEvent }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.categoryBadge}>{item.category}</Text>
-        <Text style={styles.price}>{item.price}</Text>
+    <GlassCard style={styles.card}>
+      <View style={styles.cardInner}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.eyebrow}>{item.category}</Text>
+          <Text style={styles.price}>{item.price}</Text>
+        </View>
+        <Text style={styles.title}>{item.title}</Text>
+        <View style={styles.metaLine}>
+          <Ionicons name="location-outline" size={13} color={Colors.secondary} />
+          <Text style={styles.metaText} numberOfLines={1}>{item.venue}</Text>
+        </View>
+        <View style={styles.metaLine}>
+          <Ionicons name="calendar-outline" size={13} color={Colors.secondary} />
+          <Text style={styles.metaText}>{item.date} · {item.time}</Text>
+        </View>
+        {!!item.url && (
+          <Pressable style={styles.bookBtn} onPress={() => WebBrowser.openBrowserAsync(item.url)}>
+            <Text style={styles.bookText}>Book</Text>
+            <Ionicons name="open-outline" size={14} color={Colors.accent} />
+          </Pressable>
+        )}
       </View>
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.venue}>📍 {item.venue}</Text>
-      <Text style={styles.datetime}>🗓 {item.date} • {item.time}</Text>
-      {!!item.url && (
-        <Pressable style={styles.bookBtn} onPress={() => WebBrowser.openBrowserAsync(item.url)}>
-          <Text style={styles.bookText}>Book 🎟</Text>
-        </Pressable>
-      )}
+    </GlassCard>
+  );
+
+  const header = (
+    <View style={styles.header}>
+      <LargeTitle>Events</LargeTitle>
+      <SearchField
+        value={city}
+        onChangeText={setCity}
+        placeholder="City"
+        onSubmit={() => load(city, category)}
+        style={styles.search}
+      />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+        {CATEGORIES.map((cat) => {
+          const active = category === cat;
+          return (
+            <Pressable
+              key={cat}
+              style={[styles.pill, active && styles.pillActive]}
+              onPress={() => selectCategory(cat)}
+            >
+              <Text style={[styles.pillText, active && styles.pillTextActive]}>{cat}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      <View style={styles.cityRow}>
-        <TextInput
-          style={styles.cityInput}
-          placeholder="City"
-          placeholderTextColor={Colors.steel}
-          value={city}
-          onChangeText={setCity}
-          returnKeyType="search"
-          onSubmitEditing={() => load(city, category)}
-        />
-        <Pressable style={styles.findBtn} onPress={() => load(city, category)}>
-          <Text style={styles.findText}>Find</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow} contentContainerStyle={styles.chipsContent}>
-        {CATEGORIES.map((cat) => (
-          <Pressable
-            key={cat}
-            style={[styles.chip, category === cat && styles.chipActive]}
-            onPress={() => selectCategory(cat)}
-          >
-            <Text style={[styles.chipText, category === cat && styles.chipTextActive]}>{cat}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
       {loading && (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.red} />
-          <Text style={styles.statusText}>Finding events…</Text>
+          {header}
+          <ActivityIndicator size="large" color={Colors.accent} style={styles.loader} />
+          <Caption>Finding events…</Caption>
         </View>
       )}
 
       {!loading && error && (
         <View style={styles.center}>
-          <Text style={styles.errorText}>⚠️ {error}</Text>
-          <Pressable style={styles.retryBtn} onPress={() => load(city, category)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
+          {header}
+          <Caption style={styles.errorText}>{error}</Caption>
+          <PrimaryButton label="Retry" onPress={() => load(city, category)} style={styles.retry} />
         </View>
       )}
 
       {!loading && !error && results.length === 0 && (
         <View style={styles.center}>
-          <Text style={styles.statusText}>No events found for this filter. Try another city or category.</Text>
+          {header}
+          <Caption>No events found for this filter. Try another city or category.</Caption>
         </View>
       )}
 
@@ -116,6 +127,7 @@ export default function EventsScreen() {
         <FlatList
           data={results}
           keyExtractor={(e) => e.id}
+          ListHeaderComponent={header}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
         />
@@ -125,34 +137,41 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg, paddingTop: 12 },
-  cityRow: { flexDirection: 'row', paddingHorizontal: 12, marginBottom: 8, gap: 8 },
-  cityInput: {
-    flex: 1, backgroundColor: Colors.card, color: Colors.cream,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
-    borderWidth: 1, borderColor: Colors.navy,
+  container: { flex: 1, backgroundColor: Colors.bg },
+  header: { paddingTop: 64, paddingHorizontal: 20, paddingBottom: 2 },
+  search: { marginTop: 14 },
+  pills: { gap: 8, paddingVertical: 14, paddingRight: 20 },
+  pill: {
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
   },
-  findBtn: { backgroundColor: Colors.red, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
-  findText: { color: Colors.white, fontWeight: '700' },
-  chipsRow: { maxHeight: 44, marginBottom: 8 },
-  chipsContent: { paddingHorizontal: 12, gap: 8, alignItems: 'center' },
-  chip: { borderWidth: 1, borderColor: Colors.navy, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: Colors.card },
-  chipActive: { backgroundColor: Colors.red, borderColor: Colors.red },
-  chipText: { color: Colors.steel, fontSize: 13, fontWeight: '600' },
-  chipTextActive: { color: Colors.white },
-  list: { paddingHorizontal: 12, paddingBottom: 24 },
-  card: { backgroundColor: Colors.card, borderRadius: 14, padding: 16, marginBottom: 12 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  categoryBadge: { color: Colors.red, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  pillActive: { backgroundColor: Colors.accent },
+  pillText: { color: Colors.secondary, fontSize: 14, fontWeight: '600' },
+  pillTextActive: { color: Colors.white },
+  center: { flex: 1, paddingHorizontal: 20 },
+  loader: { marginTop: 40, marginBottom: 12 },
+  errorText: { marginTop: 40, textAlign: 'center' },
+  retry: { marginTop: 16, alignSelf: 'center' },
+  list: { paddingHorizontal: 16, paddingBottom: 110, gap: 14 },
+  card: { padding: 0 },
+  cardInner: { padding: 16 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  eyebrow: { color: Colors.accent, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
   price: { color: Colors.success, fontSize: 13, fontWeight: '700' },
-  title: { color: Colors.cream, fontSize: 17, fontWeight: '700', marginTop: 6 },
-  venue: { color: Colors.steel, fontSize: 13, marginTop: 6 },
-  datetime: { color: Colors.steel, fontSize: 13, marginTop: 4 },
-  bookBtn: { marginTop: 12, backgroundColor: Colors.red, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  bookText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  statusText: { color: Colors.steel, marginTop: 12, fontSize: 15, textAlign: 'center' },
-  errorText: { color: Colors.warning, fontSize: 15, textAlign: 'center' },
-  retryBtn: { marginTop: 16, backgroundColor: Colors.red, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: Colors.white, fontWeight: '700' },
+  title: { color: Colors.ink, fontSize: 18, fontWeight: '700', letterSpacing: -0.2, marginTop: 8 },
+  metaLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7 },
+  metaText: { color: Colors.secondary, fontSize: 13, flex: 1 },
+  bookBtn: {
+    marginTop: 14,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 12,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  bookText: { color: Colors.accent, fontWeight: '700', fontSize: 15 },
 });

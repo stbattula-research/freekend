@@ -1,4 +1,5 @@
 import { Colors } from '@/constants/colors';
+import { Caption, GlassCard, TYPE_ICON } from '@/components/glass';
 import {
   clearPlan,
   framebotChat,
@@ -13,6 +14,8 @@ import {
   requestPermission,
   schedulePlanReminders,
 } from '@/src/notifications';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -38,13 +41,6 @@ interface DisplayMessage {
 
 const QUICK_REPLIES = ['Plan my Saturday night', 'Date night ideas', 'Family day out'];
 
-const TYPE_EMOJI: Record<PlanItem['type'], string> = {
-  movie: '🎬',
-  restaurant: '🍽',
-  event: '🎭',
-  activity: '✈️',
-};
-
 let msgId = 0;
 const nextId = () => `m${++msgId}`;
 
@@ -62,7 +58,7 @@ export default function FrameBotScreen() {
     {
       id: nextId(),
       role: 'assistant',
-      content: "Hey! I'm FrameBot — tell me what you're in the mood for and I'll plan it out: movies, food, events, even a day trip. 🍿",
+      content: "Hey! I'm FrameBot — tell me what you're in the mood for and I'll plan it out: movies, food, events, even a day trip.",
     },
   ]);
   const [input, setInput] = useState('');
@@ -153,7 +149,7 @@ export default function FrameBotScreen() {
       // approval on mobile. Show the hint and badge future items visually.
       remindMeRef.current = true;
       setRemindMe(true);
-      setWebHint('⏰ Reminders need the mobile app — enable them there to get notified.');
+      setWebHint('Reminders need the mobile app — enable them there to get notified.');
       setRemindedIds(
         plan.filter((i) => new Date(i.startsAt).getTime() > Date.now()).map((i) => i.id)
       );
@@ -239,7 +235,7 @@ export default function FrameBotScreen() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, streaming: false, content: `⚠️ ${e?.message || 'Something went wrong. Is the API running?'}` }
+            ? { ...m, streaming: false, content: `Something went wrong: ${e?.message || 'is the API running?'}` }
             : m
         )
       );
@@ -251,34 +247,49 @@ export default function FrameBotScreen() {
 
   const renderItem = ({ item }: { item: DisplayMessage }) => {
     const isUser = item.role === 'user';
+    if (isUser) {
+      return (
+        <View style={[styles.bubbleRow, styles.userRow]}>
+          <View style={[styles.bubble, styles.userBubble]}>
+            <Text style={[styles.bubbleText, styles.userText]}>{item.content}</Text>
+          </View>
+        </View>
+      );
+    }
     return (
-      <View style={[styles.bubbleRow, isUser ? styles.userRow : styles.botRow]}>
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.botBubble]}>
-          {!isUser && <Text style={styles.botName}>🤖 FrameBot</Text>}
-          <Text style={[styles.bubbleText, isUser ? styles.userText : styles.botText]}>
+      <View style={[styles.bubbleRow, styles.botRow]}>
+        <BlurView intensity={55} tint="light" style={[styles.bubble, styles.botBubble]}>
+          <Text style={styles.botName}>FrameBot</Text>
+          <Text style={[styles.bubbleText, styles.botText]}>
             {item.content}
             {item.streaming && item.content === '' ? '…' : ''}
           </Text>
           {item.streaming && item.content !== '' && <Text style={styles.typing}>▍</Text>}
-          {!isUser && item.suggestions && item.suggestions.length > 0 && (
+          {item.suggestions && item.suggestions.length > 0 && (
             <View style={styles.cardsWrap}>
               {item.suggestions.map((s) => (
                 <Pressable
                   key={`${s.type}-${s.title}`}
                   testID={`suggestion-card-${s.title}`}
-                  style={styles.card}
                   onPress={() => send(`Add ${s.title}`)}
                   disabled={sending}
                 >
-                  <Text style={styles.cardTitle}>
-                    {TYPE_EMOJI[s.type]} {s.title}
-                  </Text>
-                  {s.details ? <Text style={styles.cardDetails}>{s.details}</Text> : null}
+                  <GlassCard style={styles.card} radius={14} intensity={80}>
+                    <View style={styles.cardInner}>
+                      <View style={styles.cardIcon}>
+                        <Ionicons name={TYPE_ICON[s.type] ?? 'ellipse-outline'} size={16} color={Colors.accent} />
+                      </View>
+                      <View style={styles.cardText}>
+                        <Text style={styles.cardTitle}>{s.title}</Text>
+                        {s.details ? <Text style={styles.cardDetails} numberOfLines={2}>{s.details}</Text> : null}
+                      </View>
+                    </View>
+                  </GlassCard>
                 </Pressable>
               ))}
             </View>
           )}
-        </View>
+        </BlurView>
       </View>
     );
   };
@@ -293,18 +304,23 @@ export default function FrameBotScreen() {
         <TextInput
           style={styles.settingInput}
           placeholder="City"
-          placeholderTextColor={Colors.steel}
+          placeholderTextColor={Colors.tertiary}
           value={city}
           onChangeText={setCity}
         />
         <TextInput
           style={styles.settingInput}
           placeholder="Language"
-          placeholderTextColor={Colors.steel}
+          placeholderTextColor={Colors.tertiary}
           value={language}
           onChangeText={setLanguage}
         />
-        {coords && <Text style={styles.nearYou}>📍 Near you</Text>}
+        {coords && (
+          <View style={styles.nearYou}>
+            <Ionicons name="location" size={13} color={Colors.accent} />
+            <Text style={styles.nearYouText}>Near you</Text>
+          </View>
+        )}
       </View>
 
       <FlatList
@@ -316,12 +332,12 @@ export default function FrameBotScreen() {
         onContentSizeChange={scrollToEnd}
       />
 
-      <View style={styles.daySection}>
+      <GlassCard style={styles.daySection} radius={20}>
         <View style={styles.dayHeader}>
-          <Text style={styles.dayTitle}>📅 Your day</Text>
+          <Text style={styles.dayTitle}>Your day</Text>
           <View style={styles.dayHeaderRight}>
             {plan.length > 0 && (
-              <Pressable onPress={clearDay}>
+              <Pressable onPress={clearDay} hitSlop={8}>
                 <Text style={styles.clearText}>Clear day</Text>
               </Pressable>
             )}
@@ -330,37 +346,39 @@ export default function FrameBotScreen() {
               <Switch
                 value={remindMe}
                 onValueChange={toggleRemindMe}
-                trackColor={{ false: Colors.navy, true: Colors.red }}
-                thumbColor={Colors.cream}
+                trackColor={{ false: 'rgba(0,0,0,0.12)', true: Colors.accent }}
+                thumbColor={Colors.white}
               />
             </View>
           </View>
         </View>
         {webHint && <Text style={styles.webHint}>{webHint}</Text>}
         {plan.length === 0 ? (
-          <Text style={styles.dayEmpty}>
-            Nothing planned yet — agree to a suggestion and I&apos;ll build your day here.
-          </Text>
+          <Caption>Nothing planned yet — agree to a suggestion and I’ll build your day here.</Caption>
         ) : (
-          plan.map((item) => (
-            <View key={item.id} style={styles.dayItem}>
-              <Text style={styles.dayEmoji}>{TYPE_EMOJI[item.type]}</Text>
+          plan.map((item, i) => (
+            <View key={item.id} style={[styles.dayItem, i > 0 && styles.dayDivider]}>
+              <View style={styles.dayIcon}>
+                <Ionicons name={TYPE_ICON[item.type] ?? 'ellipse-outline'} size={17} color={Colors.ink} />
+              </View>
               <View style={styles.dayInfo}>
                 <Text style={styles.dayItemTitle}>
                   {item.title}
-                  {remindedIds.includes(item.id) ? ' ⏰' : ''}
+                  {remindedIds.includes(item.id) && (
+                    <Text>  <Ionicons name="alarm-outline" size={12} color={Colors.accent} /></Text>
+                  )}
                 </Text>
                 <Text style={styles.dayItemDetails}>
                   {item.time} · {item.details}
                 </Text>
               </View>
-              <Pressable onPress={() => removeItem(item.id)} hitSlop={8}>
-                <Text style={styles.removeText}>×</Text>
+              <Pressable onPress={() => removeItem(item.id)} hitSlop={10}>
+                <Ionicons name="close" size={18} color={Colors.tertiary} />
               </Pressable>
             </View>
           ))
         )}
-      </View>
+      </GlassCard>
 
       <View style={styles.chipsRow}>
         {QUICK_REPLIES.map((q) => (
@@ -374,18 +392,19 @@ export default function FrameBotScreen() {
         <TextInput
           style={styles.input}
           placeholder="What do you want to do?"
-          placeholderTextColor={Colors.steel}
+          placeholderTextColor={Colors.tertiary}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => send(input)}
           returnKeyType="send"
           multiline
+          testID="chat-input"
         />
-        <Pressable style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={() => send(input)} disabled={sending}>
+        <Pressable testID="send-button" style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={() => send(input)} disabled={sending}>
           {sending ? (
             <ActivityIndicator size="small" color={Colors.white} />
           ) : (
-            <Text style={styles.sendText}>➤</Text>
+            <Ionicons name="arrow-up" size={20} color={Colors.white} />
           )}
         </Pressable>
       </View>
@@ -395,71 +414,100 @@ export default function FrameBotScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  settingsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 12 },
-  settingInput: {
-    flex: 1, backgroundColor: Colors.card, color: Colors.cream,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13,
-    borderWidth: 1, borderColor: Colors.navy,
+  settingsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 64,
+    alignItems: 'center',
   },
-  list: { paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
-  bubbleRow: { flexDirection: 'row', marginBottom: 10 },
-  userRow: { justifyContent: 'flex-end' },
-  botRow: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '82%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  userBubble: { backgroundColor: Colors.red, borderBottomRightRadius: 4 },
-  botBubble: { backgroundColor: Colors.card, borderBottomLeftRadius: 4 },
-  botName: { color: Colors.red, fontSize: 11, fontWeight: '700', marginBottom: 4 },
-  bubbleText: { fontSize: 15, lineHeight: 21 },
-  userText: { color: Colors.white },
-  botText: { color: Colors.cream },
-  typing: { color: Colors.red, fontSize: 15 },
-  cardsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  card: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.red,
+  settingInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    color: Colors.ink,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    maxWidth: '100%',
+    fontSize: 14,
   },
-  cardTitle: { color: Colors.cream, fontSize: 14, fontWeight: '700' },
-  cardDetails: { color: Colors.steel, fontSize: 12, marginTop: 3 },
-  nearYou: {
-    color: Colors.success,
-    fontSize: 12,
-    fontWeight: '700',
-    alignSelf: 'center',
-    paddingHorizontal: 4,
+  nearYou: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 2 },
+  nearYouText: { color: Colors.ink, fontSize: 12, fontWeight: '600' },
+  list: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  bubbleRow: { flexDirection: 'row', marginBottom: 10 },
+  userRow: { justifyContent: 'flex-end' },
+  botRow: { justifyContent: 'flex-start' },
+  bubble: { maxWidth: '84%', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 11 },
+  userBubble: { backgroundColor: Colors.accent, borderBottomRightRadius: 6 },
+  botBubble: { backgroundColor: 'rgba(255,255,255,0.78)', borderBottomLeftRadius: 6, overflow: 'hidden' },
+  botName: { color: Colors.accent, fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  bubbleText: { fontSize: 16, lineHeight: 22 },
+  userText: { color: Colors.white },
+  botText: { color: Colors.ink },
+  typing: { color: Colors.accent, fontSize: 15 },
+  cardsWrap: { gap: 8, marginTop: 12 },
+  card: { padding: 11 },
+  cardInner: { flexDirection: 'row', alignItems: 'center' },
+  cardIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
-  daySection: {
-    marginHorizontal: 12, marginBottom: 8, backgroundColor: Colors.card,
-    borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.navy,
+  cardText: { flex: 1 },
+  cardTitle: { color: Colors.ink, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  cardDetails: { color: Colors.secondary, fontSize: 13, marginTop: 2, lineHeight: 17 },
+  daySection: { marginHorizontal: 12, marginBottom: 10, padding: 14 },
+  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  dayTitle: { color: Colors.ink, fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
+  dayHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  clearText: { color: Colors.accent, fontSize: 13, fontWeight: '600' },
+  remindRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  remindLabel: { color: Colors.ink, fontSize: 13, fontWeight: '600' },
+  webHint: { color: Colors.warning, fontSize: 12, marginBottom: 8, lineHeight: 16 },
+  dayItem: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  dayDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.hairline },
+  dayIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  dayTitle: { color: Colors.cream, fontSize: 15, fontWeight: '700' },
-  dayHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  clearText: { color: Colors.steel, fontSize: 12, textDecorationLine: 'underline' },
-  remindRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  remindLabel: { color: Colors.cream, fontSize: 13, fontWeight: '600' },
-  webHint: { color: Colors.warning, fontSize: 12, marginBottom: 8 },
-  dayEmpty: { color: Colors.steel, fontSize: 13, lineHeight: 18 },
-  dayItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.navy },
-  dayEmoji: { fontSize: 20 },
   dayInfo: { flex: 1 },
-  dayItemTitle: { color: Colors.cream, fontSize: 14, fontWeight: '700' },
-  dayItemDetails: { color: Colors.steel, fontSize: 12, marginTop: 2 },
-  removeText: { color: Colors.steel, fontSize: 22, fontWeight: '700', paddingHorizontal: 4 },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
-  chip: { borderWidth: 1, borderColor: Colors.red, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
-  chipText: { color: Colors.red, fontSize: 13, fontWeight: '600' },
-  inputRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 16, paddingTop: 4, alignItems: 'flex-end' },
-  input: {
-    flex: 1, backgroundColor: Colors.card, color: Colors.cream,
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15,
-    maxHeight: 100, borderWidth: 1, borderColor: Colors.navy,
+  dayItemTitle: { color: Colors.ink, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
+  dayItemDetails: { color: Colors.secondary, fontSize: 13, marginTop: 2 },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+  chip: { backgroundColor: Colors.accentSoft, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
+  chipText: { color: Colors.accent, fontSize: 14, fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 104,
+    paddingTop: 2,
+    alignItems: 'flex-end',
   },
-  sendBtn: { backgroundColor: Colors.red, width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-  sendBtnDisabled: { opacity: 0.6 },
-  sendText: { color: Colors.white, fontSize: 20, fontWeight: '700' },
+  input: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    color: Colors.ink,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    fontSize: 16,
+    maxHeight: 110,
+  },
+  sendBtn: {
+    backgroundColor: Colors.accent,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendBtnDisabled: { opacity: 0.55 },
 });
